@@ -1,3 +1,16 @@
+# == Schema Information
+# Schema version: 20081115190515
+#
+# Table name: my_events
+#
+#  id         :integer         not null, primary key
+#  user_id    :integer
+#  event_id   :integer
+#  status     :string(255)
+#  created_at :datetime
+#  updated_at :datetime
+#
+
 class MyEvent < ActiveRecord::Base
   # Associations
   belongs_to :user

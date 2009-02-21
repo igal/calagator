@@ -671,4 +671,31 @@ describe Event do
     end
   end
 
+  describe "when requesting status about my events'" do
+    fixtures :users, :events
+
+    before(:each) do
+      @event = Event.new
+    end
+
+    it "should return empty structure if an event has no 'my events'" do
+      @event.should_receive(:my_events).and_return([])
+      @event.my_event_users_by_status.should be_blank
+    end
+
+    it "should return data structure describing an event with many 'my events' with statuses" do
+      my_events = [
+        MyEvent.new(:user => users(:quentin), :event => events(:calagator_codesprint), :status => "yes"),
+        MyEvent.new(:user => users(:aaron), :event => events(:tomorrow), :status => "maybe"),
+        MyEvent.new(:user => users(:aaron), :event => events(:day_after_tomorrow), :status => "no"),
+      ]
+      @event.should_receive(:my_events).and_return(my_events)
+      @event.my_event_users_by_status.should == {
+        'yes' => [users(:quentin)],
+        'maybe' => [users(:aaron)],
+        'no' => [users(:aaron)],
+      }
+    end
+  end
+
 end
