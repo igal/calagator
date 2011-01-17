@@ -2,7 +2,6 @@ require File.dirname(__FILE__) + '/../spec_helper'
 
 describe EventsController, "when displaying index" do
   integrate_views
-  fixtures :events, :venues
 
   it "should produce HTML" do
     get :index, :format => "html"
@@ -67,6 +66,7 @@ describe EventsController, "when displaying index" do
   end
 
   describe "in ICS format" do
+    fixtures :events, :venues
 
     it "should produce ICS" do
       post :index, :format => "ics"
@@ -80,6 +80,130 @@ describe EventsController, "when displaying index" do
       response.body.should_not =~ /SUMMARY:#{events(:old_event).title}/
     end
 
+  end
+
+  describe "and ordering" do
+    def events_by(ordering)
+      get :index, :order => ordering
+      return assigns[:listing].events
+    end
+
+    before :each do
+      Event.destroy_all
+      Venue.destroy_all
+
+      @venue2 = Venue.create!(:title => "venue2")
+      @venue1 = Venue.create!(:title => "venue1")
+
+      @event2 = Event.create!(:title => "event2", :start_time => 1.year.from_now, :end_time => 1.year.from_now+1.hour)
+      @event1 = Event.create!(:title => "event1", :start_time => 1.week.from_now, :end_time => 1.week.from_now+1.hour)
+    end
+
+    it "by event date" do
+      events_by("date").should == [@event1, @event2]
+    end
+
+    it "by event name" do
+      events_by("name").should == [@event1, @event2]
+    end
+
+    it "by venue name" do
+      events_by("venue").should == [@event1, @event2]
+    end
+  end
+
+  describe "and filtering by date range" do
+    def resulting_date
+      assigns[:listing].send("#{@date_kind}_date")
+    end
+
+    def default_date
+      EventListing.send("default_#{@date_kind}_date")
+    end
+
+    def assert_error(message)
+      response.should have_tag(".flash_failure", message)
+    end
+
+    [:start, :end].each do |date_kind|
+      describe "for #{date_kind} date" do
+        before :all do
+          @date_kind = date_kind
+          @date_kind_other = \
+            case date_kind
+            when :start then :end
+            when :end then :start
+            else raise ArgumentError, "Unknown date_kind: #{date_kind}"
+            end
+        end
+
+        it "should use the default if not given the parameter" do
+          get :index, :date => {}
+          resulting_date.should == default_date
+          flash[:failure].should be_nil
+        end
+
+        it "should use the default if given an invalid top-level parameter" do
+          get :index, :date => "omgkittens"
+          resulting_date.should == default_date
+          assert_error /invalid.+#{@date_kind}/
+        end
+
+        it "should use the default if given an empty parameter" do
+          get :index, :date => {@date_kind => ""}
+          resulting_date.should == default_date
+          assert_error /empty.+#{@date_kind}/
+        end
+
+        it "should use the default if given an invalid parameter" do
+          get :index, :date => {@date_kind => "omgkittens"}
+          resulting_date.should == default_date
+          assert_error /malformed.+#{@date_kind}/
+        end
+
+        it "should use the value if valid" do
+          expected = Date.yesterday
+          get :index, :date => {@date_kind => expected.to_s("%Y-%m-%d")}
+          resulting_date.should == expected
+        end
+      end
+    end
+
+    it "should return matching events" do
+      # Given
+      matching = [
+        Event.create!(
+          :title => "matching1",
+          :start_time => Time.parse("2010-01-16 00:00"),
+          :end_time => Time.parse("2010-01-16 01:00")
+        ),
+        Event.create!(:title => "matching2",
+          :start_time => Time.parse("2010-01-16 23:00"),
+          :end_time => Time.parse("2010-01-17 00:00")
+        ),
+      ]
+
+      non_matching = [
+        Event.create!(
+          :title => "nonmatchingbefore",
+          :start_time => Time.parse("2010-01-15 23:00"),
+          :end_time => Time.parse("2010-01-15 23:59")
+        ),
+        Event.create!(
+          :title => "nonmatchingafter",
+          :start_time => Time.parse("2010-01-17 00:01"),
+          :end_time => Time.parse("2010-01-17 01:00")
+        ),
+      ]
+
+      # When
+      get :index, :date => {:start => "2010-01-16", :end => "2010-01-16"}
+      results = assigns[:listing].events
+
+      # Then
+      results.size.should == 2
+      results.should == matching
+    end
   end
 end
 
@@ -344,6 +468,7 @@ describe EventsController, "when creating or updating events" do
 
   describe "when cloning event" do
     fixtures :events, :venues
+
     before(:each) do
       @event = events(:calagator_codesprint)
       Event.stub!(:find).and_return(@event)

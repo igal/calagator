@@ -4,38 +4,18 @@ class EventsController < ApplicationController
   # GET /events
   # GET /events.xml
   def index
-    order = params[:order] || 'date'
-    order = \
-      case order
-        when 'date'
-          'start_time'
-        when 'name'
-          'lower(events.title), start_time'
-        when 'venue'
-          'lower(venues.title), start_time'
-        end
+    @listing = EventListing.new(
+      :order => params[:order],
+      :start_and_end_date => params[:date]
+    )
 
-    default_start_date = Time.today
-    default_end_date   = Time.today + 3.months
-    begin
-      @start_date = !params[:date].blank? ? Date.parse(params[:date][:start]) : default_start_date
-      @end_date = !params[:date].blank? ? Date.parse(params[:date][:end]) : default_end_date
-    rescue ArgumentError => e
-      @start_date = default_start_date
-      @end_date   = default_end_date
-      flash[:failure] = "You tried to filter by an invalid date"
+    @listing.errors.each do |error|
+      append_flash :failure, error
     end
 
-    @events_deferred = lambda {
-      params[:date] ?
-        Event.find_by_dates(@start_date, @end_date, :order => order) :
-        Event.find_future_events(:order => order)
-    }
-    @perform_caching = params[:order].blank? && params[:date].blank?
+    @perform_caching = @listing.cache?
 
-    @page_title = "Events"
-
-    render_events(@events_deferred)
+    render_events(@listing)
   end
 
   # GET /events/1
@@ -257,22 +237,23 @@ protected
     render(:text => Event.to_ical(events, :url_helper => lambda{|event| event_url(event)}), :mime_type => 'text/calendar')
   end
 
-  # Render +events+ for a particular format.
-  def render_events(events)
+  # Render events for a +listing+ or an array of +events+ in a particular format.
+  def render_events(listing_or_events)
     respond_to do |format|
       format.html # *.html.erb
       format.kml  # *.kml.erb
-      format.ics  { ical_export(yield_events(events)) }
+      format.ics  { ical_export(yield_events(listing_or_events)) }
       format.atom { render :template => 'events/index' }
-      format.xml  { render :xml  => yield_events(events).to_xml(:include => :venue) }
-      format.json { render :json => yield_events(events).to_json(:include => :venue), :callback => params[:callback] }
+      format.xml  { render :xml  => yield_events(listing_or_events).to_xml(:include => :venue) }
+      format.json { render :json => yield_events(listing_or_events).to_json(:include => :venue), :callback => params[:callback] }
     end
   end
 
-  # Return an array of Events from a +container+, which can either be an array
-  # of Events or a lambda that returns an array of Events.
-  def yield_events(container)
-    return container.respond_to?(:call) ? container.call : container
+  # Return an array of events from either an array of events or a Listing object.
+  def yield_events(listing_or_events)
+    return listing_or_events.respond_to?(:events) ?
+      listing_or_events.events :
+      listing_or_events
   end
 
   # Venues may be referred to in the params hash either by id or by name. This
@@ -289,5 +270,4 @@ protected
       p[:venue_name]
     end
   end
-
 end

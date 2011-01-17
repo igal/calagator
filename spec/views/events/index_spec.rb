@@ -7,9 +7,9 @@ describe "/events" do
     @codesprint = events(:calagator_codesprint)
     @tomorrow = events(:tomorrow)
     @day_after_tomorrow = events(:day_after_tomorrow)
-    assigns[:events_deferred] = lambda {[@codesprint, @tomorrow, @day_after_tomorrow]}
-    assigns[:start_date] = Time.now
-    assigns[:end_date] = Time.now
+    assigns[:listing] = EventListing.new.tap do
+      self.stub!(:events, [@codesprint, @tomorrow, @day_after_tomorrow])
+    end
   end
   
   it "should render valid XHTML" do
